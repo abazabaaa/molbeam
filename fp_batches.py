@@ -1,59 +1,37 @@
-
 import sys
-
-from io import StringIO
-import pyarrow as pa
-from pyarrow import csv
-import pandas as pd
-import pyarrow.feather as feather
-from rdkit.Chem import PandasTools
-
-from rdkit import Chem
-from rdkit.Chem import AllChem
-from rdkit import DataStructs
-from rdkit import Chem
-from rdkit.Chem import rdMolDescriptors
-from rdkit.Chem.Draw import rdDepictor
-from rdkit.Chem.Draw import rdMolDraw2D
-from rdkit.Chem import Draw
-from rdkit.Chem import DataStructs
-
-import numpy as np
-import numpy.ma as ma
-import tqdm
-import pyarrow.parquet as pq
-import numpy as np
-from scipy import sparse
-import pandas as pd
-import math
 import time
-from functools import reduce
-import pyarrow.dataset as ds
-from pyarrow import Table
-from pyarrow import csv
-import pyarrow as pa
-from pyarrow.parquet import ParquetWriter
-import pathlib
-import pyarrow.parquet as pq
-from tqdm.contrib import tenumerate
-from tqdm import tqdm
-
-import pyarrow.feather as fe
-import datamol as dm
-import operator
-
 from datetime import timedelta
 from timeit import time
 
+import pyarrow as pa
+import pyarrow.dataset as ds
+import pyarrow.parquet as pq
+from pyarrow import Table
+
+import numpy as np
+import numpy.ma as ma
+# import pandas as pd
+# from tqdm.contrib import tenumerate
+# from tqdm import tqdm
+from scipy import sparse
 
 
+# from rdkit.Chem import PandasTools
+# from rdkit import Chem
+# from rdkit.Chem import AllChem
+# from rdkit import DataStructs
+# from rdkit import Chem
+# from rdkit.Chem import rdMolDescriptors
+# from rdkit.Chem.Draw import rdDepictor
+# from rdkit.Chem.Draw import rdMolDraw2D
+# from rdkit.Chem import Draw
+# from rdkit.Chem import DataStructs
 
+# import datamol as dm
+# import operator
 
+# %config Completer.use_jedi = False
 
-
-dm.disable_rdkit_log()
-
-%config Completer.use_jedi = False
 
 def stopwatch(method):
     def timed(*args, **kw):
@@ -64,6 +42,7 @@ def stopwatch(method):
         print(f"{method.__name__}: {duration}")
         return result
     return timed
+
 
 def _preprocess(i, row):
 
@@ -89,44 +68,44 @@ def _preprocess(i, row):
     row["inchi"] = dm.to_inchi(mol)
     row["inchikey"] = dm.to_inchikey(mol)
     row["onbits_fp"] =list(fp.GetOnBits())
-    
+
     return row
 
 
 
-@stopwatch
-def fingerprint_matrix_from_df(df):
-    smiles = list(df['enumerated_smiles'])
-    onbits_fp = list(df['achiral_fp'])
-    zincid = list(df['canonical_ID'])
-    count_ligs = len(smiles)
+# @stopwatch
+# def fingerprint_matrix_from_df(df):
+#     smiles = list(df['enumerated_smiles'])
+#     onbits_fp = list(df['achiral_fp'])
+#     zincid = list(df['canonical_ID'])
+#     count_ligs = len(smiles)
 
 
 
 
-    name_list =[]
+#     name_list =[]
 
-    row_idx = list()
-    col_idx = list()
-    num_on_bits = []
-    for count,m in enumerate(smiles):
-        zincid_name = str(zincid[count])
-        onbits = list(onbits_fp[count])
+#     row_idx = list()
+#     col_idx = list()
+#     num_on_bits = []
+#     for count,m in enumerate(smiles):
+#         zincid_name = str(zincid[count])
+#         onbits = list(onbits_fp[count])
 
-        col_idx+=onbits
-        row_idx += [count]*len(onbits)
-        num_bits = len(onbits)
-        num_on_bits.append(num_bits)
+#         col_idx+=onbits
+#         row_idx += [count]*len(onbits)
+#         num_bits = len(onbits)
+#         num_on_bits.append(num_bits)
 
-        name_list.append(zincid_name)
+#         name_list.append(zincid_name)
 
 
-    unfolded_size = 8192        
-    fingerprint_matrix = sparse.coo_matrix((np.ones(len(row_idx)).astype(bool), (row_idx, col_idx)), 
-              shape=(max(row_idx)+1, unfolded_size))
-    fingerprint_matrix =  sparse.csr_matrix(fingerprint_matrix)
-    fp_mat = fingerprint_matrix
-    return fp_mat
+#     unfolded_size = 8192
+#     fingerprint_matrix = sparse.coo_matrix((np.ones(len(row_idx)).astype(bool), (row_idx, col_idx)),
+#               shape=(max(row_idx)+1, unfolded_size))
+#     fingerprint_matrix =  sparse.csr_matrix(fingerprint_matrix)
+#     fp_mat = fingerprint_matrix
+#     return fp_mat
 
 
 
@@ -154,15 +133,15 @@ def fast_jaccard(X, Y=None):
 
 
 
-    
-    
+
+
 def min_distance(row):
 
     a = out_array[rowIndex(row)]
     minval = np.min(ma.masked_where(a==0, a))
     minvalpos = np.argmin(ma.masked_where(a==0, a))
 #     sumval = np.sum(ma.masked_where(a==0, a))
-    
+
     smiles_nn = smiles[minvalpos]
     name_nn = name[minvalpos]
 
@@ -172,69 +151,85 @@ def min_distance(row):
 def rowIndex(row):
     return row.name
 
-def table_to_csr_fp(table):    
+@stopwatch
+def table_to_csr_fp(table):
     x = table.column('achiral_fp')
-
+    # [
+    #   [on_bit_1, on_bit_2], each molecules on bits
+    #   [on_bit_1_b, on_bit_2_b],
+    # ]
 
     row_idx = list()
     col_idx = list()
     num_on_bits = []
 
-    for _ in range(len(x)):
+    for _ in range(3):
 
-
+        # print(type(x))
+        # pull out one molecules list of on_bits by index
         onbits = pa.ListValue.as_py(x[_])
+        # print(f'onbits: {onbits}')
         col_idx+=onbits
+        print(f'col_idx: {col_idx}')
         row_idx += [_]*len(onbits)
+        print(f'row_idx: {row_idx}')
         num_bits = len(onbits)
         num_on_bits.append(num_bits)
+        # print(f'num_on_bits: {num_on_bits}')
+        # break
 
+    unfolded_size = 8192
+    # mol_a, mol_b, mol_c
+    # mol_b
+    # mol_c
 
-
-
-            # except:
-            #     print('molecule failed')
-
-    unfolded_size = 8192        
     fingerprint_matrix = sparse.coo_matrix((np.ones(len(row_idx)).astype(bool), (row_idx, col_idx)), shape=(max(row_idx)+1, unfolded_size))
+    # print(fingerprint_matrix.toarray())
     fingerprint_matrix =  sparse.csr_matrix(fingerprint_matrix)
     return fingerprint_matrix
 
-data = [['OC1=CC=C(N=C(/C=C/C=C/C2=CN=C(NC)C=C2)S3)C3=C1', 'PBB3'], \
-        ['OC(CF)COC1=CC=C(N=C(/C=C/C=C/C2=CN=C(NC)C=C2)S3)C3=C1', 'PM_PBB3'], \
-        ['OC(CF)COC1=CC=C(N=C(/C=C/C#CC2=CN=C(NC)C=C2)S3)C3=C1', 'C5_05'],
-       ]
+def main():
+    table = pq.read_table('/Users/coop/Dev/molbeam/sample_data/er_real_35_to_end_0.parquet')
+    fingerprint_matrix_in = table_to_csr_fp(table)
+    print(fingerprint_matrix_in.shape)
 
-# Create the pandas DataFrame
-df = pd.DataFrame(data, columns = ['smiles', 'canonical_ID'])
 
-smiles_column = 'smiles'
+main()
+# data = [['OC1=CC=C(N=C(/C=C/C=C/C2=CN=C(NC)C=C2)S3)C3=C1', 'PBB3'], \
+#         ['OC(CF)COC1=CC=C(N=C(/C=C/C=C/C2=CN=C(NC)C=C2)S3)C3=C1', 'PM_PBB3'], \
+#         ['OC(CF)COC1=CC=C(N=C(/C=C/C#CC2=CN=C(NC)C=C2)S3)C3=C1', 'C5_05'],
+#        ]
 
-# run initial mapper on smiles column to generate basic information and fingerprint on bits
-df_clean_mapped = dm.parallelized(_preprocess, list(df.iterrows()), arg_type='args', progress=True)
-df_clean_mapped = pd.DataFrame(df_clean_mapped)
-df_clean_mapped['enumerated_smiles'] = df_clean_mapped['standard_smiles']
-df_clean_mapped['achiral_fp'] = df_clean_mapped['onbits_fp']
-fingerprint_matrix_pbb3 = fingerprint_matrix_from_df(df_clean_mapped)
+# # Create the pandas DataFrame
+# df = pd.DataFrame(data, columns = ['smiles', 'canonical_ID'])
 
-dataset = ds.dataset('batch0001', format="parquet")
-fragments = [file for file in dataset.get_fragments()]
-total_frags = len(fragments)
-for count,record_batch in tenumerate(dataset.to_batches(columns=["canonical_ID", "enumerated_smiles", "achiral_fp"]), start=0, total=total_frags):
-    
-        #generate a CSR matrix of fingerprints for n rows in incoming record batch
-        fingerprint_matrix_in = table_to_csr_fp(record_batch)
-        
-        #
-        y = record_batch.column('canonical_ID')
-        name = [pa.StringScalar.as_py(y[_]) for _ in range(len(y))]
-        
-        
-        z = record_batch.column('enumerated_smiles')
-        smiles = [pa.StringScalar.as_py(z[_]) for _ in range(len(z))]
-        out_array = fast_jaccard(fingerprint_matrix_in, fingerprint_matrix_pbb3)
-        df_clean_mapped[['nn_smiles', 'nn_name', 'nn_distance']] = df_clean_mapped.apply(min_distance, axis=1, result_type='expand')
-        cols_to_keep = ['canonical_ID', 'nn_smiles', 'nn_name', 'nn_distance', 'enumerated_smiles']
-        df_clean_mapped = df_clean_mapped[cols_to_keep]
-        table = pa.Table.from_pandas(df_clean_mapped, preserve_index=False)
-        pq.write_table(table, f'/data/test_dataset/parquet_dataset/outfiles/comparison_{count}.parquet')
+# smiles_column = 'smiles'
+
+# # run initial mapper on smiles column to generate basic information and fingerprint on bits
+# df_clean_mapped = dm.parallelized(_preprocess, list(df.iterrows()), arg_type='args', progress=True)
+# df_clean_mapped = pd.DataFrame(df_clean_mapped)
+# df_clean_mapped['enumerated_smiles'] = df_clean_mapped['standard_smiles']
+# df_clean_mapped['achiral_fp'] = df_clean_mapped['onbits_fp']
+# fingerprint_matrix_pbb3 = fingerprint_matrix_from_df(df_clean_mapped)
+
+# dataset = ds.dataset('batch0001', format="parquet")
+# fragments = [file for file in dataset.get_fragments()]
+# total_frags = len(fragments)
+# for count,record_batch in tenumerate(dataset.to_batches(columns=["canonical_ID", "enumerated_smiles", "achiral_fp"]), start=0, total=total_frags):
+
+#         #generate a CSR matrix of fingerprints for n rows in incoming record batch
+#         fingerprint_matrix_in = table_to_csr_fp(record_batch)
+
+#         #
+#         y = record_batch.column('canonical_ID')
+#         name = [pa.StringScalar.as_py(y[_]) for _ in range(len(y))]
+
+
+#         z = record_batch.column('enumerated_smiles')
+#         smiles = [pa.StringScalar.as_py(z[_]) for _ in range(len(z))]
+#         out_array = fast_jaccard(fingerprint_matrix_in, fingerprint_matrix_pbb3)
+#         df_clean_mapped[['nn_smiles', 'nn_name', 'nn_distance']] = df_clean_mapped.apply(min_distance, axis=1, result_type='expand')
+#         cols_to_keep = ['canonical_ID', 'nn_smiles', 'nn_name', 'nn_distance', 'enumerated_smiles']
+#         df_clean_mapped = df_clean_mapped[cols_to_keep]
+#         table = pa.Table.from_pandas(df_clean_mapped, preserve_index=False)
+#         pq.write_table(table, f'/data/test_dataset/parquet_dataset/outfiles/comparison_{count}.parquet')
