@@ -1,6 +1,3 @@
-
-import sys
-import time
 from datetime import timedelta
 from timeit import time
 
@@ -12,33 +9,13 @@ from pyarrow import Table
 import numpy as np
 import numpy.ma as ma
 import pandas as pd
+import datamol as dm
+
 from tqdm.contrib import tenumerate
-from tqdm import tqdm
 from scipy import sparse
-
-
-
-
-from rdkit import Chem
-from rdkit.Chem import AllChem
-from rdkit import DataStructs
 from rdkit.Chem import rdMolDescriptors
 
-
-import datamol as dm
-import operator
-
-
-
-
-
-
-
-dm.disable_rdkit_log()
-
-
-
-
+# from mole import normalize_mol
 
 
 def stopwatch(method):
@@ -51,31 +28,32 @@ def stopwatch(method):
         return result
     return timed
 
-def _preprocess(i, row):
+
+def normalize_mol(i, row, smiles_column='smiles'):
 
     mol = dm.to_mol(str(row[smiles_column]), ordered=True)
     mol = dm.fix_mol(mol)
     mol = dm.sanitize_mol(mol, sanifix=True, charge_neutral=False)
     mol = dm.standardize_mol(mol, disconnect_metals=False, normalize=True, reionize=True, uncharge=False, stereo=True)
 
-
     fingerprint_function = rdMolDescriptors.GetMorganFingerprintAsBitVect
-    pars = { "radius": 2,
-                     "nBits": 8192,
-                     "invariants": [],
-                     "fromAtoms": [],
-                     "useChirality": False,
-                     "useBondTypes": True,
-                     "useFeatures": False,
-            }
+    pars = {
+        "radius": 2,
+        "nBits": 8192,
+        "invariants": [],
+        "fromAtoms": [],
+        "useChirality": False,
+        "useBondTypes": True,
+        "useFeatures": False,
+    }
     fp = fingerprint_function(mol, **pars)
 
     row["standard_smiles"] = dm.standardize_smiles(dm.to_smiles(mol))
     row["selfies"] = dm.to_selfies(mol)
     row["inchi"] = dm.to_inchi(mol)
     row["inchikey"] = dm.to_inchikey(mol)
-    row["onbits_fp"] =list(fp.GetOnBits())
-    
+    row["onbits_fp"] = list(fp.GetOnBits())
+
     return row
 
 
@@ -85,35 +63,27 @@ def fingerprint_matrix_from_df(df):
     smiles = list(df['enumerated_smiles'])
     onbits_fp = list(df['achiral_fp'])
     zincid = list(df['canonical_ID'])
-    count_ligs = len(smiles)
 
-
-
-
-    name_list =[]
-
+    name_list = []
     row_idx = list()
     col_idx = list()
     num_on_bits = []
-    for count,m in enumerate(smiles):
+    for count, m in enumerate(smiles):
         zincid_name = str(zincid[count])
         onbits = list(onbits_fp[count])
 
-        col_idx+=onbits
-        row_idx += [count]*len(onbits)
+        col_idx += onbits
+        row_idx += [count] * len(onbits)
         num_bits = len(onbits)
         num_on_bits.append(num_bits)
-
         name_list.append(zincid_name)
 
-
-    unfolded_size = 8192        
-    fingerprint_matrix = sparse.coo_matrix((np.ones(len(row_idx)).astype(bool), (row_idx, col_idx)), 
+    unfolded_size = 8192
+    fingerprint_matrix = sparse.coo_matrix((np.ones(len(row_idx)).astype(bool), (row_idx, col_idx)),
               shape=(max(row_idx)+1, unfolded_size))
     fingerprint_matrix =  sparse.csr_matrix(fingerprint_matrix)
     fp_mat = fingerprint_matrix
     return fp_mat
-
 
 
 def fast_jaccard(X, Y=None):
@@ -137,18 +107,13 @@ def fast_jaccard(X, Y=None):
     return (1 - intersect / union).A
 
 
-
-
-
-    
-    
 def min_distance(row):
 
     a = out_array[rowIndex(row)]
     minval = np.min(ma.masked_where(a==0, a))
     minvalpos = np.argmin(ma.masked_where(a==0, a))
 #     sumval = np.sum(ma.masked_where(a==0, a))
-    
+
     smiles_nn = smiles[minvalpos]
     name_nn = name[minvalpos]
 
@@ -159,7 +124,8 @@ def rowIndex(row):
     return row.name
 
 
-def table_to_csr_fp(table):    
+@stopwatch
+def table_to_csr_fp(table):
     x = table.column('achiral_fp')
 
 
@@ -172,78 +138,86 @@ def table_to_csr_fp(table):
 
         onbits = pa.ListValue.as_py(x[_])
         col_idx+=onbits
+        # print(f'col_idx: {col_idx}')
         row_idx += [_]*len(onbits)
         num_bits = len(onbits)
         num_on_bits.append(num_bits)
 
-
-
-
-            # except:
-            #     print('molecule failed')
-
-    unfolded_size = 8192        
+    unfolded_size = 8192
     fingerprint_matrix = sparse.coo_matrix((np.ones(len(row_idx)).astype(bool), (row_idx, col_idx)), shape=(max(row_idx)+1, unfolded_size))
     fingerprint_matrix =  sparse.csr_matrix(fingerprint_matrix)
     return fingerprint_matrix
-  
+
 
 @stopwatch
-def i_want_to_go_faster(table):
+def build_fingerprint_matrix(table):
     x = table.column('achiral_fp')
-#     poop = pa.ChunkedArray.iterchunks(x)
     l = x
     col_idx = l.flatten().to_numpy()
-    
     row_idx = l.value_parent_indices().to_numpy()
-
-    
-    unfolded_size = 8192        
-    fingerprint_matrix = sparse.coo_matrix((np.ones(len(row_idx)).astype(bool), (row_idx, col_idx)), 
+    unfolded_size = 8192
+    fingerprint_matrix = sparse.coo_matrix((np.ones(len(row_idx)).astype(bool), (row_idx, col_idx)),
               shape=(max(row_idx)+1, unfolded_size))
     fingerprint_matrix =  sparse.csr_matrix(fingerprint_matrix)
     return fingerprint_matrix
 
-data = [['OC1=CC=C(N=C(/C=C/C=C/C2=CN=C(NC)C=C2)S3)C3=C1', 'PBB3'], \
-        ['OC(CF)COC1=CC=C(N=C(/C=C/C=C/C2=CN=C(NC)C=C2)S3)C3=C1', 'PM_PBB3'], \
+
+def format_query(query):
+
+    df = pd.DataFrame(query, columns=['smiles', 'canonical_ID'])
+    df_clean_mapped = dm.parallelized(normalize_mol, list(df.iterrows()), arg_type='args', progress=True)
+    df_clean_mapped = pd.DataFrame(df_clean_mapped)
+    df_clean_mapped['enumerated_smiles'] = df_clean_mapped['standard_smiles']
+    df_clean_mapped['achiral_fp'] = df_clean_mapped['onbits_fp']
+    return fingerprint_matrix_from_df(df_clean_mapped)
+
+
+def main():
+    query = [
+        ['OC1=CC=C(N=C(/C=C/C=C/C2=CN=C(NC)C=C2)S3)C3=C1', 'PBB3'],
+        ['OC(CF)COC1=CC=C(N=C(/C=C/C=C/C2=CN=C(NC)C=C2)S3)C3=C1', 'PM_PBB3'],
         ['OC(CF)COC1=CC=C(N=C(/C=C/C#CC2=CN=C(NC)C=C2)S3)C3=C1', 'C5_05'],
-       ]
+    ]
+    x = format_query(query)
+    print(x.head(5))
 
-
+main()
 # Create the pandas DataFrame
-df = pd.DataFrame(data, columns = ['smiles', 'canonical_ID'])
+# df = pd.DataFrame(data, columns = ['smiles', 'canonical_ID'])
 
-smiles_column = 'smiles'
+# smiles_column = 'smiles'
 
 # run initial mapper on smiles column to generate basic information and fingerprint on bits
-df_clean_mapped = dm.parallelized(_preprocess, list(df.iterrows()), arg_type='args', progress=True)
-df_clean_mapped = pd.DataFrame(df_clean_mapped)
-df_clean_mapped['enumerated_smiles'] = df_clean_mapped['standard_smiles']
-df_clean_mapped['achiral_fp'] = df_clean_mapped['onbits_fp']
-fingerprint_matrix_pbb3 = fingerprint_matrix_from_df(df_clean_mapped)
+# df_clean_mapped = dm.parallelized(_preprocess, list(df.iterrows()), arg_type='args', progress=True)
+# df_clean_mapped = pd.DataFrame(df_clean_mapped)
+# df_clean_mapped['enumerated_smiles'] = df_clean_mapped['standard_smiles']
+# df_clean_mapped['achiral_fp'] = df_clean_mapped['onbits_fp']
+# fingerprint_matrix_pbb3 = fingerprint_matrix_from_df(df_clean_mapped)
 
-dataset = ds.dataset('batch0001', format="parquet")
-fragments = [file for file in dataset.get_fragments()]
-total_frags = len(fragments)
-for count,record_batch in tenumerate(dataset.to_batches(columns=["canonical_ID", "enumerated_smiles", "achiral_fp"]), start=0, total=total_frags):
-    
-        #generate a CSR matrix of fingerprints for n rows in incoming record batch
-        fingerprint_matrix_in = i_want_to_go_faster(record_batch)
-        
-        #
-        y = record_batch.column('canonical_ID')
-        name = [pa.StringScalar.as_py(y[_]) for _ in range(len(y))]
-        
-        
-        z = record_batch.column('enumerated_smiles')
-        smiles = [pa.StringScalar.as_py(z[_]) for _ in range(len(z))]
-        
-        
-        out_array = fast_jaccard(fingerprint_matrix_in, fingerprint_matrix_pbb3)
-        df_clean_mapped[['nn_smiles', 'nn_name', 'nn_distance']] = df_clean_mapped.apply(min_distance, axis=1, result_type='expand')
-        
-        
-        cols_to_keep = ['canonical_ID', 'nn_smiles', 'nn_name', 'nn_distance', 'enumerated_smiles']
-        df_clean_mapped = df_clean_mapped[cols_to_keep]
-        table = pa.Table.from_pandas(df_clean_mapped, preserve_index=False)
-        pq.write_table(table, f'/data/test_dataset/parquet_dataset/outfiles_faster/comparison_{count}.parquet')
+
+
+# dataset = ds.dataset('batch0001', format="parquet")
+# fragments = [file for file in dataset.get_fragments()]
+# total_frags = len(fragments)
+# for count,record_batch in tenumerate(dataset.to_batches(columns=["canonical_ID", "enumerated_smiles", "achiral_fp"]), start=0, total=total_frags):
+
+#         #generate a CSR matrix of fingerprints for n rows in incoming record batch
+#         fingerprint_matrix_in = build_fingerprint_matrix(record_batch)
+
+#         #
+#         y = record_batch.column('canonical_ID')
+#         name = [pa.StringScalar.as_py(y[_]) for _ in range(len(y))]
+
+
+#         z = record_batch.column('enumerated_smiles')
+#         smiles = [pa.StringScalar.as_py(z[_]) for _ in range(len(z))]
+
+
+#         out_array = fast_jaccard(fingerprint_matrix_in, fingerprint_matrix_pbb3)
+#         df_clean_mapped[['nn_smiles', 'nn_name', 'nn_distance']] = df_clean_mapped.apply(min_distance, axis=1, result_type='expand')
+
+
+#         cols_to_keep = ['canonical_ID', 'nn_smiles', 'nn_name', 'nn_distance', 'enumerated_smiles']
+#         df_clean_mapped = df_clean_mapped[cols_to_keep]
+#         table = pa.Table.from_pandas(df_clean_mapped, preserve_index=False)
+#         pq.write_table(table, f'/data/test_dataset/parquet_dataset/outfiles_faster/comparison_{count}.parquet')

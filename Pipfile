@@ -6,6 +6,11 @@ name = "pypi"
 [packages]
 pyarrow = "*"
 scipy = "*"
+rdkit-pypi = "*"
+datamol = "*"
+pandas = "*"
+tqdm = "*"
+matplotlib = "*"
 
 [dev-packages]
 
