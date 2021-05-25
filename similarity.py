@@ -8,14 +8,11 @@ from pyarrow import Table
 
 import numpy as np
 import numpy.ma as ma
-import pandas as pd
-import datamol as dm
 
-from tqdm.contrib import tenumerate
+from tqdm import tqdm
 from scipy import sparse
-from rdkit.Chem import rdMolDescriptors
 
-# from mole import normalize_mol
+import mole
 
 
 def stopwatch(method):
@@ -28,62 +25,6 @@ def stopwatch(method):
         return result
     return timed
 
-
-def normalize_smiles(item):
-
-    mol = dm.to_mol(str(item[0]), ordered=True)
-    mol = dm.fix_mol(mol)
-    mol = dm.sanitize_mol(mol, sanifix=True, charge_neutral=False)
-    mol = dm.standardize_mol(mol, disconnect_metals=False, normalize=True, reionize=True, uncharge=False, stereo=True)
-
-    fingerprint_function = rdMolDescriptors.GetMorganFingerprintAsBitVect
-    pars = {
-        "radius": 2,
-        "nBits": 8192,
-        "invariants": [],
-        "fromAtoms": [],
-        "useChirality": False,
-        "useBondTypes": True,
-        "useFeatures": False,
-    }
-    fp = fingerprint_function(mol, **pars)
-
-    standard_smiles = dm.standardize_smiles(dm.to_smiles(mol))
-    # row["selfies"] = dm.to_selfies(mol)
-    # row["inchi"] = dm.to_inchi(mol)
-    # row["inchikey"] = dm.to_inchikey(mol)
-    achiral_fp = list(fp.GetOnBits())
-    query_name = item[1]
-
-    return standard_smiles, achiral_fp, query_name
-
-def normalize_smiles_test(item):
-
-    mol = dm.to_mol(str(item[0]), ordered=True)
-    # mol = dm.fix_mol(mol)
-    # mol = dm.sanitize_mol(mol, sanifix=True, charge_neutral=False)
-    # mol = dm.standardize_mol(mol, disconnect_metals=False, normalize=True, reionize=True, uncharge=False, stereo=True)
-
-    fingerprint_function = rdMolDescriptors.GetMorganFingerprintAsBitVect
-    pars = {
-        "radius": 2,
-        "nBits": 8192,
-        "invariants": [],
-        "fromAtoms": [],
-        "useChirality": False,
-        "useBondTypes": True,
-        "useFeatures": False,
-    }
-    fp = fingerprint_function(mol, **pars)
-
-    standard_smiles = dm.to_smiles(mol)
-    # row["selfies"] = dm.to_selfies(mol)
-    # row["inchi"] = dm.to_inchi(mol)
-    # row["inchikey"] = dm.to_inchikey(mol)
-    achiral_fp = list(fp.GetOnBits())
-    query_name = item[1]
-
-    return standard_smiles, achiral_fp, query_name
 
 # @stopwatch
 # def fingerprint_matrix_from_df(fp_list_query):
@@ -151,22 +92,16 @@ def rowIndex(row):
     return row.name
 
 
-@stopwatch
 def table_to_csr_fp(table):
     x = table.column('achiral_fp')
-
-
     row_idx = list()
     col_idx = list()
     num_on_bits = []
-
     for _ in range(len(x)):
-
-
         onbits = pa.ListValue.as_py(x[_])
-        col_idx+=onbits
+        col_idx += onbits
         # print(f'col_idx: {col_idx}')
-        row_idx += [_]*len(onbits)
+        row_idx += [_] * len(onbits)
         num_bits = len(onbits)
         num_on_bits.append(num_bits)
 
@@ -176,12 +111,18 @@ def table_to_csr_fp(table):
     return fingerprint_matrix
 
 
-@stopwatch
 def build_fingerprint_matrix(table):
-    x = table.column('achiral_fp')
-    l = x
-    col_idx = l.flatten().to_numpy()
-    row_idx = l.value_parent_indices().to_numpy()
+    fp_col = table.column('achiral_fp')
+
+    # fp_vals = []
+    # for fp in fp_col:
+    #     fp_vals.extend(fp)
+    #     print(fp_vals)
+
+    # print(fp_vals)
+    # col_idx = pa.array(fp_vals).to_numpy()
+    col_idx = fp_col.flatten().to_numpy()
+    row_idx = fp_col.value_parent_indices().to_numpy()
     unfolded_size = 8192
     fingerprint_matrix = sparse.coo_matrix((np.ones(len(row_idx)).astype(bool), (row_idx, col_idx)),
               shape=(max(row_idx)+1, unfolded_size))
@@ -190,20 +131,24 @@ def build_fingerprint_matrix(table):
 
 
 def format_query(query):
+    smiles_list = []
+    fp_list = []
+    for q in query:
+        # query_name = q[0]
+        smiles = q[1]
+        std_smiles, fingerprint = mole.smiles_to_fingerprint(smiles)
+        smiles_list.append(std_smiles)
+        fp_list.append(fingerprint)
 
-    for item in query:
-        # standard_smiles, achiral_fp, query_name = normalize_smiles(item)
-        standard_smiles_test, achiral_fp_test, query_name_test = normalize_smiles_test(item)
+    table = pa.table(
+        [smiles_list, fp_list],
+        names=['std_smiles', 'achiral_fp'],
+    )
+    # fp = build_fingerprint_matrix(table)
+    query_fp_matrix = table_to_csr_fp(table)
+    return query_fp_matrix
 
-    
 
-    fields = [
-    pa.field('enumerated_smiles', pa.string()),
-    pa.field('canonical_ID', pa.string()),
-    pa.field('achiral_fp', pa.float64()),
-    ]
-
-    my_schema = pa.schema(fields)    
     # df = pd.DataFrame(query, columns=['smiles', 'canonical_ID'])
     # df_clean_mapped = df.apply(normalize_mol, axis=1)
     # df_clean_mapped['enumerated_smiles'] = df_clean_mapped['standard_smiles']
@@ -211,19 +156,8 @@ def format_query(query):
     # return fingerprint_matrix_from_df(df_clean_mapped)
 
 # smiles_column='smiles'
-def main():
 
-    query = [
-        ['OC1=CC=C(N=C(/C=C/C=C/C2=CN=C(NC)C=C2)S3)C3=C1', 'PBB3'],
-        ['OC(CF)COC1=CC=C(N=C(/C=C/C=C/C2=CN=C(NC)C=C2)S3)C3=C1', 'PM_PBB3'],
-        ['OC(CF)COC1=CC=C(N=C(/C=C/C#CC2=CN=C(NC)C=C2)S3)C3=C1', 'C5_05'],
-    ]
-    # smiles_column='smiles'
-    x = format_query(query)
-    # print(x.head(5))
-    # print(x)
 
-main()
 # Create the pandas DataFrame
 # df = pd.DataFrame(data, columns = ['smiles', 'canonical_ID'])
 
