@@ -13,6 +13,7 @@ tqdm = "*"
 matplotlib = "*"
 ray = "*"
 dataframe-image = "*"
+duckdb = "*"
 
 [dev-packages]
 

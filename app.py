@@ -1,5 +1,9 @@
+import duckdb
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pandas as pd
-from analysis import query_fp_search
+import dataframe_image as dfi
+from rdkit.Chem import PandasTools
 
 import molbeam
 import similarity
@@ -18,17 +22,30 @@ def process_batch(query_names, query_matrix, mol_batch, threshold=.99):
         result.insert(0, 'canonical_id', mol_batch.column('canonical_ID'))
         result.insert(1, 'std_smiles', mol_batch.column('enumerated_smiles'))
 
-
     return result
 
 
-def format_results(result_list, query_names):
-    result_df = pd.concat(result_list).sort_values(by=query_names)
+def export_results(result_list, threshold):
+    result_df = pd.concat(result_list)
+    table = pa.Table.from_pandas(result_df)
+    pq.write_table(table, 'query_out.parquet')
+    print('Wrote results to: query_out.parquet')
 
-    # PandasTools.AddMoleculeColumnToFrame(result_df, smilesCol='std_smiles', molCol='self')
-    # PandasTools.AddMoleculeColumnToFrame(combined_df, smilesCol='nn_smiles', molCol='near_neighbor')
-    # PandasTools.RenderImagesInAllDataFrames()
-    return result_df
+    con = duckdb.connect(database=':memory:', read_only=False)
+    sql = '''
+        SELECT
+            *
+        FROM parquet_scan('query_out.parquet')
+        WHERE PBB3 < ?
+    '''
+    top_results = con.execute(sql, [threshold]).fetchdf()
+
+    PandasTools.AddMoleculeColumnToFrame(top_results, smilesCol='std_smiles', molCol='self')
+    final_df = top_results.sort_values(by=['PBB3'], ascending=True)
+    final_df = final_df.reset_index(drop=True)
+
+    file_name = 'search_results.png'
+    dfi.export(final_df, file_name)
 
 
 def main():
@@ -41,23 +58,16 @@ def main():
     query_matrix = similarity.format_query(query)
     columns = ["canonical_ID", "enumerated_smiles", "achiral_fp"]
     results = []
-    print('Searching enamine database of 3,820,000 molecules...')
+    print('Searching enamine database of 3.8M molecules...')
 
+    # minimum jaccard distance to be considered a match
+    threshold = 0.75
     for mol_batch in molbeam.stream(batch_size=20000, columns=columns):
-        # minimum jaccard distance to be considered a match
-        threshold = 0.75
         result = process_batch(query_names, query_matrix, mol_batch, threshold)
         if result is not None:
             results.append(result)
-        
 
-    distance = 0.75
-    final_df = format_results(results, query_names)
-    # print(len(final_df))
-    # print(final_df.head(20))
-
-    output = query_fp_search(final_df, distance)
-    print(output)
+    export_results(results, threshold)
 
 
 if __name__ == '__main__':
