@@ -12,6 +12,7 @@ pandas = "*"
 tqdm = "*"
 matplotlib = "*"
 ray = "*"
+dataframe-image = "*"
 
 [dev-packages]
 
