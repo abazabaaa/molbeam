@@ -111,18 +111,9 @@ def table_to_csr_fp(table):
     return fingerprint_matrix
 
 
-def build_fingerprint_matrix(table):
-    fp_col = table.column('achiral_fp')
-
-    # fp_vals = []
-    # for fp in fp_col:
-    #     fp_vals.extend(fp)
-    #     print(fp_vals)
-
-    # print(fp_vals)
-    # col_idx = pa.array(fp_vals).to_numpy()
-    col_idx = fp_col.flatten().to_numpy()
-    row_idx = fp_col.value_parent_indices().to_numpy()
+def build_fingerprint_matrix(fingerprints):
+    col_idx = fingerprints.flatten().to_numpy()
+    row_idx = fingerprints.value_parent_indices().to_numpy()
     unfolded_size = 8192
     fingerprint_matrix = sparse.coo_matrix((np.ones(len(row_idx)).astype(bool), (row_idx, col_idx)),
               shape=(max(row_idx)+1, unfolded_size))
