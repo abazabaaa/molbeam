@@ -2,14 +2,10 @@ from datetime import timedelta
 from timeit import time
 
 import pyarrow as pa
-import pyarrow.dataset as ds
-import pyarrow.parquet as pq
-from pyarrow import Table
 
 import numpy as np
 import numpy.ma as ma
 
-from tqdm import tqdm
 from scipy import sparse
 
 import mole
@@ -75,21 +71,21 @@ def fast_jaccard(X, Y=None):
     return (1 - intersect / union).A
 
 
-def min_distance(row):
+# def min_distance(row):
 
-    a = out_array[rowIndex(row)]
-    minval = np.min(ma.masked_where(a==0, a))
-    minvalpos = np.argmin(ma.masked_where(a==0, a))
-#     sumval = np.sum(ma.masked_where(a==0, a))
+#     a = out_array[rowIndex(row)]
+#     minval = np.min(ma.masked_where(a==0, a))
+#     minvalpos = np.argmin(ma.masked_where(a==0, a))
+# #     sumval = np.sum(ma.masked_where(a==0, a))
 
-    smiles_nn = smiles[minvalpos]
-    name_nn = name[minvalpos]
+#     smiles_nn = smiles[minvalpos]
+#     name_nn = name[minvalpos]
 
-    return smiles_nn, name_nn, minval
+#     return smiles_nn, name_nn, minval
 
 
-def rowIndex(row):
-    return row.name
+# def rowIndex(row):
+#     return row.name
 
 
 def table_to_csr_fp(table):
@@ -138,6 +134,14 @@ def format_query(query):
     # fp = build_fingerprint_matrix(table)
     query_fp_matrix = table_to_csr_fp(table)
     return query_fp_matrix
+
+
+
+
+
+
+
+
 
 
     # df = pd.DataFrame(query, columns=['smiles', 'canonical_ID'])

@@ -11,6 +11,7 @@ datamol = "*"
 pandas = "*"
 tqdm = "*"
 matplotlib = "*"
+ray = "*"
 
 [dev-packages]
 
