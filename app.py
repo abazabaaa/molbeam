@@ -1,6 +1,8 @@
 import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pyarrow.flight as fl
+
 import pandas as pd
 import dataframe_image as dfi
 from rdkit.Chem import PandasTools
@@ -70,5 +72,12 @@ def main():
     export_results(results, threshold)
 
 
+def client():
+    client = fl.connect("grpc://0.0.0.0:8815")
+    resp = client.do_get(fl.Ticket('molbeam'))
+    for r in resp:
+        print(r.data.to_pandas())
+
+
 if __name__ == '__main__':
-    main()
+    client()
