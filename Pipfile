@@ -6,16 +6,16 @@ name = "pypi"
 [packages]
 pyarrow = "*"
 scipy = "*"
-rdkit-pypi = "*"
-datamol = "*"
 pandas = "*"
 tqdm = "*"
-matplotlib = "*"
-ray = "*"
-dataframe-image = "*"
 duckdb = "*"
 
 [dev-packages]
+matplotlib = "*"
+ray = "*"
+rdkit-pypi = "*"
+datamol = "*"
+dataframe-image = "*"
 
 [requires]
 python_version = "3.8"
