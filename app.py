@@ -6,6 +6,7 @@ import pyarrow.flight as fl
 import pandas as pd
 import dataframe_image as dfi
 from rdkit.Chem import PandasTools
+from tqdm import tqdm
 
 import molbeam
 import similarity
@@ -65,19 +66,37 @@ def main():
     # minimum jaccard distance to be considered a match
     threshold = 0.75
     for mol_batch in molbeam.stream(batch_size=20000, columns=columns):
-        result = process_batch(query_names, query_matrix, mol_batch, threshold)
-        if result is not None:
-            results.append(result)
+        continue
+    #     result = process_batch(query_names, query_matrix, mol_batch, threshold)
+    #     if result is not None:
+    #         results.append(result)
 
-    export_results(results, threshold)
+    # export_results(results, threshold)
 
 
 def client():
-    client = fl.connect("grpc://0.0.0.0:8815")
-    resp = client.do_get(fl.Ticket('molbeam'))
-    for r in resp:
-        print(r.data.to_pandas())
+    # client = fl.connect("grpc://0.0.0.0:8815")
+    client = fl.connect("grpc://35.168.111.94:8815")
+
+    stream = client.do_get(fl.Ticket('molbeam'))
+    for r in tqdm(stream, total=191):
+        continue
+        # print(r.data.to_pandas())
+
+
+def pclient():
+    import ray
+    ray.init()
+
+    @ray.remote
+    def f(batch):
+        return 1
+
+    client = fl.connect("grpc://35.168.111.94:8815")
+    stream = client.do_get(fl.Ticket('molbeam'))
+    futures = [f.remote(b.data) for b in tqdm(stream, total=191)]
+    print(ray.get(futures))
 
 
 if __name__ == '__main__':
-    client()
+    main()

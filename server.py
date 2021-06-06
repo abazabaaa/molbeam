@@ -8,10 +8,11 @@ class FlightServer(fl.FlightServerBase):
     def __init__(self, location="grpc://0.0.0.0:8815", **kwargs):
         super(FlightServer, self).__init__(location, **kwargs)
 
-        # sample_data = ds.dataset("./sample_data", format="parquet")
-        sample_data = ds.dataset("s3://molbeam/tested", format="parquet")
+        local_data = ds.dataset("./sample_data", format="parquet")
+        s3_data = ds.dataset("s3://molbeam/tested", format="parquet")
         self.datasets = {
-            b'molbeam': sample_data,
+            b'molbeam': s3_data,
+            b'molbeam_local': local_data,
         }
 
     def do_get(self, context, ticket):
